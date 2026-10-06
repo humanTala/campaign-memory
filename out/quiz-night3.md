@@ -1,26 +1,24 @@
 # Continuity quiz - night 3 - memory
 
-score 7/10
+score 10/10
 
 - ok   **Is Marra the smith alive? Answer yes or no, then one sentence.**
-  No, Marra was killed in a fire. (remembered from night 2, 2026-09-06, 30 days ago)
+  No, Marra is dead. The fire that claimed her life has left a shadow over the village, and her absence is felt deeply by the community.
 - ok   **Is Mirra the herbalist alive? Answer yes or no, then one sentence.**
-  Yes, Mirra is alive and shaken.
+  Yes, Mirra is alive and continues to run the herbalist's shop, the Green Door, in the village. What would you like to do next?
 - ok   **Did I give Old Tobb his ledger back? Yes or no.**
-  Yes, you fulfilled your promise to Old Tobb by returning the ledger. (remembered from night 2, 2026-09-06, 30 days ago)
+  Yes, you fulfilled your promise to return the ledger to Old Tobb. (remembered from night 2, 2026-08-31, 30 days ago)
 - ok   **Is the toll bridge still standing? Yes or no.**
   No, the bridge burned.
-- MISS **What did Dax keep from the forge after the fire?**
-  Dax kept his tinker's cart from the forge after the fire. It was left there for repairs when the unfortunate incident occurred. (remembered from night 1, 2026-08-30, 37 days ago) 
-
-What would you like to do next, Dax? You could check on Old Tobb, visit Marra’s forge, or join Pell for breakfast.
-- MISS **On my second visit to the Hollow I bought something from Mirra after the fire. What was it?**
-  You purchased a small pouch of feverleaf from Mirra for four coppers. She was shaken after the fire, but you helped her during that difficult time. (remembered from night 1, 2026-08-30, 37 days ago)
+- ok   **What did Dax keep from the forge after the fire?**
+  Dax keeps Marra's hammer as a keepsake after the fire that claimed her life. It serves as a reminder of their time together and the promise to find out who started the fire. What would you like to do next?
+- ok   **On my second visit to the Hollow I bought something from Mirra after the fire. What was it?**
+  On your second visit to the Hollow, you bought a coil of rope from Mirra for three coppers. Would you like to visit her shop again or perhaps explore another part of the village?
 - ok   **What is my dog called?**
-  Your loyal dog is named Biscuit. (remembered from night 1, 2026-08-30, 37 days ago)
+  Your dog is named Biscuit! A loyal companion, always ready for an adventure by your side. What would you like to do with Biscuit in the village?
 - ok   **What tone did I ask for? Quote me.**
-  You asked for a light tone: "Keep it light — no gore." (remembered from night 1, 2026-08-30, 37 days ago)
-- MISS **How much did I pay Sela to cross on the ferry?**
-  You haven't crossed the ferry yet, so you haven't paid Sela anything. The ferry is a mile downstream and is rarely used while the bridge stands. Would you like to check on Old Tobb, visit Marra at the forge, or join Pell for breakfast instead?
+  You asked for a tone that is "gentle, no gore." (remembered from night 2, 2026-08-31, 30 days ago)
+- ok   **How much did I pay Sela to cross on the ferry?**
+  You paid Sela, the ferrywoman, one copper to cross the river. Would you like to visit the inn, explore the village, or perhaps speak with Sela again?
 - ok   **What did Dax swear to do before bed last time?**
-  Dax swore to find out who started the fire that claimed Marra's life. (remembered from night 2, 2026-09-06, 30 days ago)
+  Dax swore to find out who started the fire that claimed Marra's life. (remembered from night 2, 2026-08-31)
