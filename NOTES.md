@@ -1,12 +1,10 @@
 # Module 6 Bridge Project — The Campaign
 
-## a. My fold
+## a. Short-Term Memory and Folding
 
-I used a short-term memory budget of **1,200 tokens** and kept the last
-**4 turns** verbatim.
+I used a short-term memory budget of **1,200 tokens** and kept the last **4 turns** verbatim.
 
-When the short-term context exceeded the budget, `fold()` compressed the older
-turns into a rolling summary while leaving the most recent turns unchanged.
+When the short-term context exceeded the budget, `fold()` compressed the older turns into a rolling summary while leaving the most recent turns unchanged.
 
 My fold prompt was:
 
@@ -41,118 +39,55 @@ OLDER TURNS:
 Return only the updated summary.
 ```
 
-I explicitly included companion names in the fold policy because they are
-important continuity information. The fold also removes a forgotten subject
-from the rolling summary when a retcon occurs.
+During verification, one important continuity detail was the companion dog's
+name, **Biscuit**. I therefore made companion names explicit in the folding
+policy and specifically instructed the summary not to drop them.
 
-The official memory verification passed all **17 checks**:
+The final verification confirmed that the folded summary preserved this
+information.
 
-```text
-all 17 checks passed - both memories are sound. Run night 1.
-```
+In my first complete campaign run, the Night 2 continuity quiz scored **8/10**.
+The two missed questions involved the tone preference and the inventory before
+bed. Night 3 then scored **10/10**.
 
-The final campaign receipt reported:
+The final Memory GM prompt measurements were:
 
-| Night   | Folds | Max prompt |
+| Night   | Folds | Max Prompt |
 | ------- | ----: | ---------: |
-| Night 1 |     2 |      2,407 |
-| Night 2 |     2 |      2,551 |
-| Night 3 |     2 |      2,629 |
+| Night 1 |     2 |      2,140 |
+| Night 2 |     2 |      2,153 |
+| Night 3 |     3 |      2,398 |
 
-The Memory GM therefore continued folding its short-term context rather than
-keeping the entire conversation history verbatim.
+I did not keep a separate pre-fold Memory-GM receipt, so I cannot give a
+measured before/after comparison for the same implementation without inventing
+one.
 
----
+The available no-memory/no-fold Goldfish baseline reached **3,132 tokens** on
+Night 2 and **2,632 tokens** on Night 3. The Memory GM reached **2,153** and
+**2,398** respectively.
 
-## b. Structured long-term memory
-
-The long-term memory extracts durable campaign facts from the conversation
-using the structured `Facts` model.
-
-The extraction prompt tells the model to preserve durable information such
-as:
-
-* NPC names and identities
-* important locations
-* inventory and possessions
-* promises, quests, and plans
-* player preferences
-* character identity requests
-* important campaign events
-* state changes
-
-It also explicitly rejects greetings, farewells, sign-offs, and general
-conversation that should not become durable memories.
-
-The extraction step uses one structured model call:
-
-```python
-result = structured(Facts, prompt)
-```
-
-If extraction fails, it returns an empty list rather than crashing the
-campaign.
-
-The verifier confirmed that extraction returned both a preference and an NPC
-fact from a real exchange, while returning no facts for chatter:
-
-```text
-ok long-term: extract() returns a preference and an npc fact from a real
-exchange [llm]
-
-ok long-term: extract() returns [] for chatter [llm]
-```
-
-The test also confirmed that preferences such as:
-
-```text
-Call my character Dax.
-Keep it light.
-```
-
-were stored as separate durable facts.
+This shows that the Memory GM continued folding its short-term context instead
+of keeping the entire conversation history verbatim.
 
 ---
 
-## c. Superseding and retrieval
+## b. NPC Identity Protection
 
-When a new fact changes the state of an existing fact, `remember()` can mark
-the older active fact as superseded rather than deleting it.
+One important retrieval problem was keeping similarly named NPCs separate.
 
-The important distinction is that superseded memories remain in the database
-as history. They are no longer active memories for normal retrieval.
+The Night 3 continuity quiz correctly distinguished the two NPCs.
 
-Each active memory stores metadata including:
+For **Marra**, the GM answered:
 
-```python
-{
-    "type": fact.type,
-    "subject": fact.subject,
-    "subject_norm": normalise(fact.subject),
-    "text": fact.text,
-    "status": "active",
-    "night": int(night),
-    "date": asof.isoformat(),
-    "ts": float(to_ts(asof)),
-}
-```
+> No, Marra is dead. The fire that claimed her life has left a shadow over
+> the village, and her absence is felt deeply by the community.
 
-Reworded duplicate facts are also detected so that the database does not
-continue accumulating identical active memories.
+For **Mirra**, the GM answered:
 
-The verifier confirmed that `remember()` writes active rows with the required
-type, date, timestamp, and night information.
+> Yes, Mirra is alive and continues to run the herbalist's shop, the Green
+> Door, in the village.
 
----
-
-## d. NPC identity protection
-
-The retrieval logic includes an explicit identity check for NPC memories.
-
-The purpose is to prevent semantic similarity from returning a different NPC
-with a similar name when the query clearly refers to a known character.
-
-The relevant logic is:
+The identity protection in `recall()` is:
 
 ```python
 if mem_type == "npc" and named_npcs:
@@ -160,85 +95,99 @@ if mem_type == "npc" and named_npcs:
         continue
 ```
 
-This matters for similarly named characters such as **Marra** and **Mirra**.
-A similarity search can find both names because they are semantically close,
-but the identity check makes sure that a memory about one NPC is not treated
-as a memory about the other.
+I tested why this guard was necessary by temporarily removing these lines and
+rerunning:
 
-The verifier included this identity requirement and all 17 verification checks
-passed after the final implementation.
+```text
+python verify_memory.py
+```
+
+Without the identity guard, the query:
+
+```text
+is Mirra alive
+```
+
+retrieved both NPCs:
+
+```text
+Mirra — similarity 0.67
+Marra — similarity 0.34
+```
+
+The verification then failed:
+
+```text
+FAIL  long-term: recall('is Mirra alive') never returns Marra (identity check)
+```
+
+After restoring the identity guard, the same verification returned only the
+appropriate Mirra memory, and the full verification result returned to:
+
+```text
+all 17 checks passed - both memories are sound.
+```
+
+This demonstrated that semantic similarity alone is not sufficient for NPC
+identity. Semantic retrieval finds potentially relevant memories, while the
+explicit identity check prevents a memory about a different named NPC from
+being included.
 
 ---
 
-## e. Event decay and recall
-
-Long-term recall converts Chroma distances into similarity scores and removes
-memories below the minimum similarity threshold.
-
-The configured minimum similarity is:
-
-```python
-MIN_SIM = 0.30
-```
-
-Events also receive time-based decay. Only facts of type `event` use the event
-half-life:
-
-```python
-EVENT_HALF_LIFE_DAYS = 14
-```
-
-The event score is calculated using:
-
-```python
-sim * 0.5 ** (age / EVENT_HALF_LIFE_DAYS)
-```
-
-This means that older events gradually become less prominent while stable
-facts such as NPC identities or preferences do not receive the same event
-decay.
-
-Recall also limits the number of returned memories per subject and sorts the
-remaining memories by score before returning the top results.
-
----
-
-## f. The retcon
+## c. The Retcon
 
 On Night 3, the campaign retconned the Tidewater amulet so that Dax had never
 taken it.
 
-The campaign performed:
+The three important checks were:
 
 ```text
--- retcon: forget 'amulet' --
-[memory] x forgot 'amulet': 5 rows deleted, 0 remaining
+rows remaining: 0
+summary mentions amulet after re-fold: no
+GM's next answer mentions amulet: no
 ```
 
-The rolling short-term memory was then folded again with the forgotten subject
-removed.
-
-The three final checks were:
+The complete retcon receipt reported:
 
 ```text
-[short-term] summary mentions 'amulet': no
-
-[check] GM's answer mentions 'amulet': no
-```
-
-The final receipt reported:
-
-```text
-retcon 'amulet' (night 3): 5 rows deleted, 0 remaining;
+4 rows deleted, 0 remaining;
 summary mentions it after re-fold: no;
 GM's next answer mentions it: no
 ```
 
-The short-term check is important because deleting the long-term database rows
-alone would not necessarily remove information that had already been copied
-into the rolling summary.
+The short-term summary was the most subtle part of this process.
 
-The retcon therefore checks both memory layers:
+Deleting the amulet rows from Chroma removes the persistent long-term memory,
+but this alone is not enough. The amulet may already have been copied into the
+rolling short-term summary. Since that summary is later sent back to the
+model, the forgotten information could otherwise leak back into the
+conversation.
+
+For this reason, the retcon uses both:
+
+```python
+ltm.forget(subject)
+```
+
+and:
+
+```python
+stm.fold(drop=subject)
+```
+
+The checks are performed at three different levels.
+
+First, the persistent store is checked to make sure the original memory source
+has been removed.
+
+Second, the short-term summary is checked because it may contain a cached copy
+of the forgotten information.
+
+Third, the GM's next answer is checked. This provides an end-to-end test that
+the deleted information is not being reintroduced into the conversation.
+
+The successful result was:
 
 ```text
 Long-term memory  -> 0 remaining
@@ -246,70 +195,46 @@ Short-term memory -> no mention
 Next model answer -> no mention
 ```
 
-The successful result demonstrates that the forgotten information was removed
-from persistent memory and did not remain in the short-term context used for
-the next GM response.
+This confirms that the retcon affected both memory layers rather than only the
+persistent database.
 
 ---
 
-## g. Night 3 results
+## d. Final Results
 
-The Night 3 continuity quiz scored:
+The continuity quiz results were:
 
-```text
-7/10
-```
+| Night   | Memory GM | Goldfish GM |
+| ------- | --------: | ----------: |
+| Night 2 |      8/10 |        3/10 |
+| Night 3 |     10/10 |        4/10 |
 
-The three missed questions involved:
+The results demonstrate the difference between having persistent memory and
+relying on the full conversation history.
 
-1. What Dax kept from the forge after the fire.
-2. What Dax bought from Mirra after the fire.
-3. How much Dax paid Sela to cross on the ferry.
+Long-term typed memories preserved important campaign information across
+separate processes. Short-term folding controlled how much recent conversation
+was placed back into the model context.
 
-These quiz results are separate from the official implementation
-verification. The authoritative `verify_memory.py` test suite passed all
-**17/17 checks**.
+The implementation also supported several additional memory behaviours:
 
-Night 3 also successfully completed the required amulet retcon check:
+* **Superseding** allowed state changes to replace active facts while
+  preserving the older facts as history.
+* **Event decay** reduced the score of older event memories.
+* **NPC identity protection** prevented similarly named characters from being
+  confused during retrieval.
+* **Explicit forgetting** removed a retconned fact from persistent memory and
+  the short-term summary.
+* **Structured extraction** converted free-form conversation into typed,
+  durable facts.
 
-```text
-5 rows deleted, 0 remaining
-summary mentions it after re-fold: no
-GM's next answer mentions it: no
-```
+Fact extraction required one model call per turn. This added a model-call cost,
+but it allowed free-form conversation to be converted into structured
+long-term memories.
 
----
+Later retrieval then selected only relevant stored facts instead of sending
+the entire campaign history back to the model.
 
-## Final results
-
-The final campaign receipt reported:
-
-| Night   | Folds | Max prompt | Quiz | Facts stored | Model calls |
-| ------- | ----: | ---------: | ---: | -----------: | ----------: |
-| Night 1 |     2 |      2,407 |    — |           64 |          38 |
-| Night 2 |     2 |      2,551 | 9/10 |           50 |          44 |
-| Night 3 |     2 |      2,629 | 7/10 |           51 |          42 |
-
-At the end of Night 3, the receipt reported:
-
-```text
-158 facts on disk at end.
-Now STOP this process. Next night is a new one.
-```
-
-The project demonstrates that short-term and long-term memory solve different
-problems.
-
-Short-term folding controls how much recent conversation is placed back into
-the model context. Long-term memory stores typed, durable campaign facts that
-can be retrieved later. Superseding allows state changes to replace active
-facts while preserving historical rows, event decay reduces the influence of
-older events, identity checks protect similarly named NPCs, and explicit
-forgetting removes retconned information from both persistent and short-term
-memory.
-
-The final implementation passed the complete memory verifier:
-
-```text
-all 17 checks passed - both memories are sound.
-```
+Overall, the project demonstrates how short-term and long-term memory solve
+different problems: short-term memory controls context size, while long-term
+memory provides persistent campaign continuity across game sessions.
