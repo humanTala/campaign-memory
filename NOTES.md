@@ -1,6 +1,8 @@
 # Module 6 Bridge Project — The Campaign
 
-## a. Short-Term Memory and Folding
+**Tala Daana**
+
+## a. My fold
 
 I used a short-term memory budget of **1,200 tokens** and kept the last **4 turns** verbatim.
 
@@ -39,53 +41,40 @@ OLDER TURNS:
 Return only the updated summary.
 ```
 
-During verification, one important continuity detail was the companion dog's
-name, **Biscuit**. I therefore made companion names explicit in the folding
-policy and specifically instructed the summary not to drop them.
+During verification, one important piece of continuity that the summary had to preserve was the companion dog's name, **Biscuit**. I therefore made companion names explicit in the fold policy, including the instruction:
 
-The final verification confirmed that the folded summary preserved this
-information.
+> A companion's name is important continuity and must not be dropped.
 
-In my first complete campaign run, the Night 2 continuity quiz scored **8/10**.
-The two missed questions involved the tone preference and the inventory before
-bed. Night 3 then scored **10/10**.
+The final verification confirmed that the memory system preserved important campaign continuity.
+
+In my final complete Memory GM run, the Night 2 continuity quiz scored **9/10** and Night 3 scored **10/10**.
 
 The final Memory GM prompt measurements were:
 
-| Night   | Folds | Max Prompt |
+| Night   | Folds | Max prompt |
 | ------- | ----: | ---------: |
-| Night 1 |     2 |      2,140 |
-| Night 2 |     2 |      2,153 |
-| Night 3 |     3 |      2,398 |
+| Night 1 |     2 |      2,125 |
+| Night 2 |     1 |      2,267 |
+| Night 3 |     2 |      2,373 |
 
-I did not keep a separate pre-fold Memory-GM receipt, so I cannot give a
-measured before/after comparison for the same implementation without inventing
-one.
+The Goldfish baseline, which does not use persistent memory or folding, reached:
 
-The available no-memory/no-fold Goldfish baseline reached **3,132 tokens** on
-Night 2 and **2,632 tokens** on Night 3. The Memory GM reached **2,153** and
-**2,398** respectively.
+| Night   | Max prompt |
+| ------- | ---------: |
+| Night 2 |      3,078 |
+| Night 3 |      2,611 |
 
-This shows that the Memory GM continued folding its short-term context instead
-of keeping the entire conversation history verbatim.
+This shows that the Memory GM kept its active context bounded through folding instead of relying on an ever-growing conversation history.
 
 ---
 
-## b. NPC Identity Protection
+## b. Marra and Mirra
 
-One important retrieval problem was keeping similarly named NPCs separate.
+The Night 3 continuity quiz correctly kept the two similarly named NPCs apart.
 
-The Night 3 continuity quiz correctly distinguished the two NPCs.
+For **Marra**, the GM correctly remembered that she was dead.
 
-For **Marra**, the GM answered:
-
-> No, Marra is dead. The fire that claimed her life has left a shadow over
-> the village, and her absence is felt deeply by the community.
-
-For **Mirra**, the GM answered:
-
-> Yes, Mirra is alive and continues to run the herbalist's shop, the Green
-> Door, in the village.
+For **Mirra**, the GM correctly remembered that she was alive and continued to run the herbalist's shop, the Green Door.
 
 The identity protection in `recall()` is:
 
@@ -95,76 +84,37 @@ if mem_type == "npc" and named_npcs:
         continue
 ```
 
-I tested why this guard was necessary by temporarily removing these lines and
-rerunning:
+This guard is important because semantic similarity alone can confuse NPCs with similar names.
 
-```text
-python verify_memory.py
-```
+For example, a query about whether **Mirra** is alive could potentially retrieve memories about **Marra** because their names and descriptions are semantically similar. The explicit identity check prevents an NPC memory about the wrong character from entering the final context.
 
-Without the identity guard, the query:
+The verification script confirmed that the memory system passed all **17/17 checks**, including the long-term identity check.
 
-```text
-is Mirra alive
-```
+The guard therefore works together with semantic retrieval:
 
-retrieved both NPCs:
-
-```text
-Mirra — similarity 0.67
-Marra — similarity 0.34
-```
-
-The verification then failed:
-
-```text
-FAIL  long-term: recall('is Mirra alive') never returns Marra (identity check)
-```
-
-After restoring the identity guard, the same verification returned only the
-appropriate Mirra memory, and the full verification result returned to:
-
-```text
-all 17 checks passed - both memories are sound.
-```
-
-This demonstrated that semantic similarity alone is not sufficient for NPC
-identity. Semantic retrieval finds potentially relevant memories, while the
-explicit identity check prevents a memory about a different named NPC from
-being included.
+* Semantic retrieval finds potentially relevant memories.
+* The identity check filters memories belonging to a different named NPC.
+* The final context contains the appropriate character information.
 
 ---
 
-## c. The Retcon
+## c. The retcon
 
-On Night 3, the campaign retconned the Tidewater amulet so that Dax had never
-taken it.
+On Night 3, the campaign retconned the Tidewater amulet so that Dax had never taken it.
 
-The three important checks were:
+The retcon successfully removed the old amulet memories and prevented them from returning through short-term memory.
 
-```text
-rows remaining: 0
-summary mentions amulet after re-fold: no
-GM's next answer mentions amulet: no
-```
-
-The complete retcon receipt reported:
+The complete retcon result was:
 
 ```text
-4 rows deleted, 0 remaining;
-summary mentions it after re-fold: no;
-GM's next answer mentions it: no
+4 rows deleted, 0 remaining
+summary mentions the amulet after re-fold: no
+GM's next answer mentions the amulet: no
 ```
 
-The short-term summary was the most subtle part of this process.
+Deleting the amulet rows from Chroma alone would not necessarily be enough. The amulet could already have been copied into the rolling short-term summary. Because the summary is later sent back to the model, the forgotten fact could otherwise leak back into the conversation.
 
-Deleting the amulet rows from Chroma removes the persistent long-term memory,
-but this alone is not enough. The amulet may already have been copied into the
-rolling short-term summary. Since that summary is later sent back to the
-model, the forgotten information could otherwise leak back into the
-conversation.
-
-For this reason, the retcon uses both:
+That is why the retcon uses both:
 
 ```python
 ltm.forget(subject)
@@ -176,16 +126,11 @@ and:
 stm.fold(drop=subject)
 ```
 
-The checks are performed at three different levels.
+The three checks verify the retcon at different levels:
 
-First, the persistent store is checked to make sure the original memory source
-has been removed.
-
-Second, the short-term summary is checked because it may contain a cached copy
-of the forgotten information.
-
-Third, the GM's next answer is checked. This provides an end-to-end test that
-the deleted information is not being reintroduced into the conversation.
+1. **Persistent memory** — confirms the old amulet memories were deleted.
+2. **Short-term memory** — confirms the forgotten fact was removed from the rolling summary.
+3. **Next GM response** — confirms the deleted information was not reintroduced into the conversation.
 
 The successful result was:
 
@@ -195,46 +140,29 @@ Short-term memory -> no mention
 Next model answer -> no mention
 ```
 
-This confirms that the retcon affected both memory layers rather than only the
-persistent database.
-
 ---
 
-## d. Final Results
+## Final results
 
-The continuity quiz results were:
+The final continuity quiz results were:
 
 | Night   | Memory GM | Goldfish GM |
 | ------- | --------: | ----------: |
-| Night 2 |      8/10 |        3/10 |
-| Night 3 |     10/10 |        4/10 |
+| Night 2 |  **9/10** |    **3/10** |
+| Night 3 | **10/10** |    **4/10** |
 
-The results demonstrate the difference between having persistent memory and
-relying on the full conversation history.
+The verification script also reported:
 
-Long-term typed memories preserved important campaign information across
-separate processes. Short-term folding controlled how much recent conversation
-was placed back into the model context.
+```text
+verify_memory.py: 17/17 checks passed
+```
 
-The implementation also supported several additional memory behaviours:
+The project demonstrates that memory and context are separate concerns.
 
-* **Superseding** allowed state changes to replace active facts while
-  preserving the older facts as history.
-* **Event decay** reduced the score of older event memories.
-* **NPC identity protection** prevented similarly named characters from being
-  confused during retrieval.
-* **Explicit forgetting** removed a retconned fact from persistent memory and
-  the short-term summary.
-* **Structured extraction** converted free-form conversation into typed,
-  durable facts.
+Long-term typed memories persisted important campaign information across separate processes. Short-term folding controlled how much recent conversation was placed back into the model context. Superseding allowed state changes to replace active facts while retaining history, event decay reduced the score of older events, the NPC identity guard protected similarly named entities, and explicit forgetting removed a retconned fact from both persistent and short-term memory.
 
-Fact extraction required one model call per turn. This added a model-call cost,
-but it allowed free-form conversation to be converted into structured
-long-term memories.
+The Night 3 retcon also demonstrated that forgetting must happen at both the long-term and short-term memory levels. The successful test showed that the deleted amulet information was not present in the database, was not present in the folded summary, and did not appear in the GM's next answer.
 
-Later retrieval then selected only relevant stored facts instead of sending
-the entire campaign history back to the model.
+Fact extraction required model calls to turn free-form conversation into structured, typed long-term memories. Retrieval then allowed relevant stored facts to be placed back into later prompts instead of sending the entire campaign history every time.
 
-Overall, the project demonstrates how short-term and long-term memory solve
-different problems: short-term memory controls context size, while long-term
-memory provides persistent campaign continuity across game sessions.
+Overall, the results show that the Memory GM maintained substantially better continuity than the Goldfish GM while keeping the prompt size more controlled.
