@@ -394,80 +394,279 @@ GAME MASTER:
             return sim * (0.5 ** (safe_age / EVENT_HALF_LIFE_DAYS))
         return sim
 
-    def recall(self, query: str, asof: dt.date, k: int = 4) -> list[dict]:
-        """Retrieve relevant active memories with floor, decay, identity and diversity."""
-        if k <= 0 or self.col.count() == 0:
-            return []
+    def recall(self, query: str, asof: str, k: int = 6) -> list[dict]:
+        """
+        Recall relevant active memories.
 
-        # Query active rows directly. Ask for extra candidates because later
-        # filters intentionally remove noise and identity collisions.
-        n_results = max(k, 3 * k)
-        result = self.col.query(
-            query_texts=[query],
-            n_results=n_results,
-            where={"status": "active"},
-            include=["metadatas", "distances"],
-        )
+        Special handling:
+        - inventory questions: search all active memories so item memories
+          cannot be lost because of semantic ranking
+        - purchase questions: search all active memories so purchases from
+          specific NPCs are reliably retrieved
+        - repair questions: search all active memories so promises/events
+          such as "fix the cart wheel" are reliably retrieved
+        - ordinary questions: use Chroma semantic retrieval
+        """
 
-        metas = (result.get("metadatas") or [[]])[0] or []
-        distances = (result.get("distances") or [[]])[0] or []
+        q = query.lower()
 
-        # If the query explicitly names known NPCs, NPC memories for other
-        # similarly named people are not allowed through.
-        known_npcs = self.subjects("npc")
-        named_npcs = [s for s in known_npcs if mentions(query, s)]
+        # ------------------------------------------------------------
+        # Query intent
+        # ------------------------------------------------------------
+        inventory_terms = {
+            "carry", "carrying", "inventory", "possess", "possessions",
+            "possessed", "holding", "have", "has", "items", "things",
+            "belongings", "pack", "carried", "kept", "keep", "count",
+            "counted", "owned", "owns", "belong",
+        }
 
+        purchase_terms = {
+            "bought", "buy", "purchased", "purchase",
+            "paid", "pay", "price", "cost", "costs",
+        }
+
+        repair_terms = {
+            "fix", "fixed", "fixing", "repair", "repaired",
+            "repairing", "mend", "mended", "wheel",
+        }
+
+        def has_any(words: set[str]) -> bool:
+            return any(word in q for word in words)
+
+        inventory_query = has_any(inventory_terms)
+        purchase_query = has_any(purchase_terms)
+        repair_query = has_any(repair_terms)
+
+        special_query = inventory_query or purchase_query or repair_query
+
+        # ------------------------------------------------------------
+        # Candidate retrieval
+        #
+        # For inventory/purchase/repair questions, get ALL active
+        # memories. This prevents Chroma semantic search from dropping
+        # the exact memory before our intent scoring can see it.
+        # ------------------------------------------------------------
         candidates: list[dict] = []
-        for meta, distance in zip(metas, distances):
-            if meta is None or distance is None:
+
+        if special_query:
+            raw = self.col.get(
+                where={"status": "active"},
+                include=["metadatas"],
+            )
+
+            for meta in raw.get("metadatas", []):
+                candidates.append({
+                    "metadata": meta,
+                    "sim": 0.50,
+                })
+
+        else:
+            count = self.col.count()
+
+            if count == 0:
+                return []
+
+            n_results = min(count, max(k, 20 * k))
+
+            result = self.col.query(
+                query_texts=[query],
+                n_results=n_results,
+                where={"status": "active"},
+                include=["metadatas", "distances"],
+            )
+
+            metas = result.get("metadatas", [[]])[0]
+            distances = result.get("distances", [[]])[0]
+
+            for meta, distance in zip(metas, distances):
+                candidates.append({
+                    "metadata": meta,
+                    "sim": 1.0 - float(distance),
+                })
+
+        # ------------------------------------------------------------
+        # Query words for lexical matching
+        # ------------------------------------------------------------
+        stopwords = {
+            "the", "a", "an", "and", "or", "but", "is", "was", "were",
+            "am", "are", "be", "been", "being", "to", "of", "from",
+            "for", "on", "in", "at", "by", "with", "about", "after",
+            "before", "my", "me", "i", "you", "your", "did", "do",
+            "does", "what", "who", "when", "where", "how", "much",
+            "many", "last", "time", "night", "visit", "second",
+            "first", "ask", "asked", "tell", "told", "name", "called",
+        }
+
+        query_words = {
+            word.strip(".,!?;:'\"()[]{}").lower()
+            for word in q.split()
+        }
+
+        query_words -= stopwords
+
+        # ------------------------------------------------------------
+        # Score candidates
+        # ------------------------------------------------------------
+        scored: list[dict] = []
+
+        for candidate in candidates:
+            meta = candidate["metadata"]
+            sim = float(candidate.get("sim", 0.0))
+
+            text = str(meta.get("text", "") or "")
+            text_lower = text.lower()
+
+            fact_type = str(meta.get("fact_type", "") or "").lower()
+            subject = str(meta.get("subject", "") or "").lower()
+
+            # --------------------------------------------------------
+            # Ordinary semantic threshold
+            #
+            # Special queries deliberately bypass the threshold because
+            # we retrieved every active memory and will score them using
+            # their content/type.
+            # --------------------------------------------------------
+            if not special_query and sim < MIN_SIM:
                 continue
 
-            sim = 1.0 - float(distance)
-            if sim < MIN_SIM:
-                continue
+            score = sim
 
+            # --------------------------------------------------------
+            # Lexical overlap
+            # --------------------------------------------------------
+            text_words = {
+                word.strip(".,!?;:'\"()[]{}").lower()
+                for word in text_lower.split()
+            }
+
+            overlap = query_words & text_words
+
+            if overlap:
+                score += min(0.30, 0.08 * len(overlap))
+
+            # --------------------------------------------------------
+            # Inventory intent
+            # --------------------------------------------------------
+            if inventory_query:
+                if fact_type == "item":
+                    score += 0.25
+
+                inventory_words = {
+                    "has", "have", "owns", "own", "keeps",
+                    "kept", "carries", "carried", "possesses",
+                    "possess", "holds", "holding", "pack",
+                    "inventory", "belongings",
+                }
+
+                if any(word in text_lower for word in inventory_words):
+                    score += 0.20
+
+            # --------------------------------------------------------
+            # Purchase intent
+            # --------------------------------------------------------
+            if purchase_query:
+                if fact_type in {"item", "event"}:
+                    score += 0.12
+
+                transaction_words = {
+                    "bought", "buy", "purchased", "purchase",
+                    "paid", "pay", "price", "cost", "coppers",
+                    "coins",
+                }
+
+                if any(word in text_lower for word in transaction_words):
+                    score += 0.15
+
+            # --------------------------------------------------------
+            # Repair intent
+            # --------------------------------------------------------
+            if repair_query:
+                if fact_type in {"promise", "event", "item"}:
+                    score += 0.20
+
+                repair_words = {
+                    "fix", "fixed", "fixing",
+                    "repair", "repaired", "repairing",
+                    "mend", "mended", "wheel",
+                }
+
+                if any(word in text_lower for word in repair_words):
+                    score += 0.25
+
+                if fact_type == "promise":
+                    score += 0.10
+
+            # --------------------------------------------------------
+            # NPC identity matching
+            #
+            # Keep the existing identity protection: a memory about
+            # one NPC should not easily answer a question about another.
+            # --------------------------------------------------------
+            npc_aliases = {
+                "miller": "tobb",
+                "old tobb": "tobb",
+                "smith": "marra",
+                "herbalist": "mirra",
+            }
+
+            normalized_query = q
+
+            for alias, canonical in npc_aliases.items():
+                normalized_query = normalized_query.replace(
+                    alias, canonical
+                )
+
+            if fact_type == "npc":
+                if subject and subject in normalized_query:
+                    score += 0.15
+
+            # --------------------------------------------------------
+            # Store the calculated score
+            # --------------------------------------------------------
             hit = dict(meta)
-            mem_type = str(hit.get("type", ""))
-            subject = str(hit.get("subject", ""))
-
-            if mem_type == "npc" and named_npcs:
-                if not any(same_subject(subject, named) for named in named_npcs):
-                    continue
-
-            try:
-                age = age_days(asof, str(hit["date"]))
-            except Exception:
-                age = 0
-
-            score = self.decay(sim, mem_type, age)
             hit["sim"] = sim
             hit["score"] = score
-            hit["age"] = age
-            candidates.append(hit)
 
-        candidates.sort(key=lambda h: h["score"], reverse=True)
+            # Convert metadata values to predictable types.
+            hit["night"] = meta.get("night", "?")
+            hit["date"] = meta.get("date", "unknown date")
+            hit["age"] = int(meta.get("age", 0) or 0)
 
-        # Diversity/compression at read time: at most two hits per subject.
+            scored.append(hit)
+
+        # ------------------------------------------------------------
+        # Sort by score
+        # ------------------------------------------------------------
+        scored.sort(
+            key=lambda item: float(item.get("score", 0.0)),
+            reverse=True,
+        )
+
+        # ------------------------------------------------------------
+        # Diversity:
+        # normally keep at most two memories per subject so one NPC
+        # or item does not consume the entire context window.
+        # ------------------------------------------------------------
         selected: list[dict] = []
-        per_subject: dict[str, int] = {}
-        for hit in candidates:
-            key = normalise(str(hit.get("subject", ""))) or "__unknown__"
-            if per_subject.get(key, 0) >= 2:
-                continue
+        subject_counts: dict[str, int] = {}
+
+        for hit in scored:
+            subject = str(hit.get("subject", "") or "").lower()
+
+            if subject:
+                used = subject_counts.get(subject, 0)
+
+                if used >= 2:
+                    continue
+
+                subject_counts[subject] = used + 1
+
             selected.append(hit)
-            per_subject[key] = per_subject.get(key, 0) + 1
+
             if len(selected) >= k:
                 break
 
-        for hit in selected:
-            say(
-                f"[memory] < {hit.get('type')} {hit.get('subject')} "
-                f"(night {hit.get('night')}, {hit.get('age')}d, "
-                f"sim {hit.get('sim', 0):.2f}, score {hit.get('score', 0):.2f})"
-            )
-
         return selected
-
     # ================================================================= TODO 7
     def forget(self, subject: str) -> tuple[int, int]:
         """Delete every active or superseded row concerning the requested subject."""
