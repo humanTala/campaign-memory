@@ -1,10 +1,15 @@
 RECEIPT - the campaign
-generated 2026-10-06
+generated 2026-09-30
 
 MEMORY GAME MASTER
 night  as of       turns folds max prompt    area    quiz facts stored model calls
-    1  2026-08-30     18     2      2,407  30,613       -           64          38
-    2  2026-09-06     16     2      2,551  31,203    9/10           50          44
-    3  2026-10-06     15     2      2,629  30,298    7/10           51          42
+    1  2026-08-24     18     2      2,140  29,975       -           40          38
+    2  2026-08-31     16     2      2,153  26,963    8/10           33          44
+    3  2026-09-30     15     3      2,398  26,383   10/10           35          43
 
-retcon 'amulet' (night 3): 5 rows deleted, 0 remaining; summary mentions it after re-fold: no; GM's next answer mentions it: no
+GOLDFISH GAME MASTER
+night  as of       turns folds max prompt    area    quiz facts stored model calls
+    2  2026-08-31     16     0      3,132  31,598    3/10            0          26
+    3  2026-09-30     15     0      2,632  26,059    4/10            0          25
+
+retcon 'amulet' (night 3): 4 rows deleted, 0 remaining; summary mentions it after re-fold: no; GM's next answer mentions it: no
